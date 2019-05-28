@@ -14,9 +14,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis,LinearDiscriminantAnalysis
 from sklearn.linear_model import LogisticRegression
 from skfeature.function.similarity_based import fisher_score as fs
-from sklearn.feature_selection import RFE
-from xgboost import XGBClassifier
-from sklearn.neural_network import MLPClassifier
+from sklearn.feature_selection import RFECV
 #Read Data
 contents = []
 with open('train.csv') as csv_file:
@@ -48,27 +46,21 @@ for i in range(0,len(preds)):
 scaler = preprocessing.StandardScaler().fit(X)
 X = scaler.transform(X)
 X_submission_test = scaler.transform(X_submission_test)
-
 #Feature Selection
-best_n = 110
-selected_features = fs.feature_ranking(fs.fisher_score(X,Y))[0:best_n] 
-'''
-rfe = RFE(XGBClassifier(n_jobs=-1, random_state=1),40,step=1)
-X = rfe.fit_transform(X, Y)
-X_submission_test = rfe.transform(X_submission_test)
-'''
+svc = SVC(kernel='linear')
+rfecv = RFECV(estimator=svc, step=1, cv=ShuffleSplit(n_splits=10, test_size=0.25, random_state=0),
+              scoring='accuracy')
+X = rfecv.fit_transform(X, Y)
+print(rfecv.grid_scores_)
+print(rfecv.n_features_)
+y_pred = rfecv.predict(X_submission_test)
+with open('submissionRfecv.csv',mode= 'w') as output_file:
+    output_writer = csv.writer(output_file,delimiter=',')
+    output_writer.writerow(["ID","Predicted"])
+    for i in range(1,len(y_pred)+1):
+        output_writer.writerow([i,int(y_pred[i-1])])
 
-X = X[:,selected_features]
-X_submission_test = X_submission_test[:,selected_features]
-#Feature Extraction
-#pca = PCA(n_components = 100)
-#X = pca.fit_transform(X)
-#X_submission_test = pca.transform(X_submission_test)
-
-X_train = X[:-20]
-Y_train = Y[:-20]
-X_test = X[-20:]
-Y_test = Y[-20:]
+X_submission_test = rfecv.transform(X_submission_test)
 #Cross Valid
 selected_kernel = 'linear'
 def svc_param_selection(X, y, cv):
@@ -98,38 +90,21 @@ print(best_params)
 print(best_score)
 print(mean(cv_results["mean_test_score"]))
 best_svc = SVC(kernel = selected_kernel, C = best_params["C"],gamma = best_params["gamma"])
+
 #Bagging + SVC
 print("Bagging + SVC")
 best_params,best_score,cv_results = bagging_param_selection(X,Y,ShuffleSplit(n_splits=6, test_size=0.33, random_state=0),best_svc)
 print(best_params)
 print(best_score)
 print(mean(cv_results["mean_test_score"]))
-#grid_search.best_params_,grid_search.best_score_,grid_search.cv_results = param_selection(X,Y,XGBClassifier)_
-'''
-clf = XGBClassifier(
-    max_depth=2,
-    gamma=10,
-    eta=0.8,
-    reg_alpha=0.7,
-    reg_lambda=0.7
-)
-clf.fit(X,Y)
-prediction = clf.predict(X_test)
-print(accuracy_score(Y_test,prediction))
-'''
-'''
-clf = MLPClassifier(solver='lbfgs', alpha=1e-5,hidden_layer_sizes=(5, 3), random_state=1)
-clf.fit(X_train,Y_train)
-prediction = clf.predict(X_test)
-print(accuracy_score(Y_test,prediction))
-'''
-#Bagging + Neigbors
+
+#Bagging + SVC
 clf = BaggingClassifier(best_svc,max_samples = best_params["max_samples"],max_features =best_params["max_features"])
 clf.fit(X,Y)
 
 #Submission
 y_pred = clf.predict(X_submission_test)
-with open('submission.csv',mode= 'w') as output_file:
+with open('submissionBagging.csv',mode= 'w') as output_file:
     output_writer = csv.writer(output_file,delimiter=',')
     output_writer.writerow(["ID","Predicted"])
     for i in range(1,len(y_pred)+1):
